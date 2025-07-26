@@ -318,13 +318,22 @@
         appState.filters.priceRange = [minVal, maxVal];
         debouncedFetch();
     });
+    const debouncedDateFetch = debounce(() => fetchFilteredData(), 1000);
+    startDateInput.addEventListener('input', () => {
+        appState.filters.dateRange[0] = startDateInput.value;
+        debouncedDateFetch();
+    });
     startDateInput.addEventListener('change', () => {
         appState.filters.dateRange[0] = startDateInput.value;
-        fetchFilteredData();
+        fetchFilteredData(); // Immediate update on blur/enter
+    });
+    endDateInput.addEventListener('input', () => {
+        appState.filters.dateRange[1] = endDateInput.value;
+        debouncedDateFetch();
     });
     endDateInput.addEventListener('change', () => {
         appState.filters.dateRange[1] = endDateInput.value;
-        fetchFilteredData();
+        fetchFilteredData(); // Immediate update on blur/enter
     });
     repeatSalesCheckbox.addEventListener('change', () => {
         appState.filters.repeatSales = repeatSalesCheckbox.checked;
