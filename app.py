@@ -57,6 +57,28 @@ def health_check():
             "error": str(e)
         }), 500
 
+@app.route('/api/session/<session_id>', methods=['GET'])
+def check_session(session_id):
+    """Check if a session is valid."""
+    try:
+        if session_manager.session_exists(session_id):
+            session_info = session_manager.get_session_info(session_id)
+            return jsonify({
+                "valid": True,
+                "session_info": session_info
+            }), 200
+        else:
+            return jsonify({
+                "valid": False,
+                "message": "Session not found or expired"
+            }), 404
+    except Exception as e:
+        logger.error(f"Session check failed: {str(e)}")
+        return jsonify({
+            "valid": False,
+            "message": "Error checking session"
+        }), 500
+
 @app.route('/api/upload', methods=['POST'])
 @rate_limit(rate_limiter)
 def upload_file():
@@ -146,98 +168,98 @@ def get_filtered_data():
         # Retrieve data from session
         df = session_manager.get_data(session_id)
         if df is None:
+            # Check if session exists but data is None vs session doesn't exist
+            if session_manager.session_exists(session_id):
+                error_msg = "Session data is corrupted. Please upload your file again."
+            else:
+                error_msg = "Session not found or expired. Please upload your file again."
+            
             return error_handler.handle_validation_error(
-                ValidationError("Session not found or expired. Please upload a file again."),
+                ValidationError(error_msg),
                 {'endpoint': 'data', 'session_id': session_id}
             )
-    
-    # Apply filters
-    filtered_df = df.copy()
-    
-    # Validate and sanitize filter inputs
-    try:
-        # Suburb filter
-        if filters.get('suburbs') and len(filters['suburbs']) > 0:
-            # Validate suburbs exist in data
-            valid_suburbs = [s for s in filters['suburbs'] if s in df['Property locality'].values]
-            if valid_suburbs:
-                filtered_df = filtered_df[filtered_df['Property locality'].isin(valid_suburbs)]
-            
-        # Price range filter
-        if filters.get('priceRange') and len(filters['priceRange']) == 2:
-            min_p, max_p = filters['priceRange']
-            # Validate price range
-            if min_p <= max_p and min_p >= 0:
-                filtered_df = filtered_df[filtered_df['Purchase price'].between(min_p, max_p)]
-            
-        # Date range filter - Fixed to handle single dates
-        if filters.get('dateRange'):
-            start_d, end_d = filters['dateRange']
-            if start_d:
-                try:
-                    start_d_dt = pd.to_datetime(start_d)
-                    filtered_df = filtered_df[filtered_df['Contract date'] >= start_d_dt]
-                except (ValueError, TypeError):
-                    logger.warning(f"Invalid start date: {start_d}")
-            if end_d:
-                try:
-                    end_d_dt = pd.to_datetime(end_d)
-                    filtered_df = filtered_df[filtered_df['Contract date'] <= end_d_dt]
-                except (ValueError, TypeError):
-                    logger.warning(f"Invalid end date: {end_d}")
-            
-        # Repeat sales filter
-        if filters.get('repeatSales'):
-            sale_counts = filtered_df['Property ID'].value_counts()
-            repeat_ids = sale_counts[sale_counts > 1].index
-            filtered_df = filtered_df[filtered_df['Property ID'].isin(repeat_ids)]
-            
-    except Exception as e:
-        logger.error(f"Error applying filters: {str(e)}")
-        # Return original data if filtering fails
+        
+        # Apply filters
         filtered_df = df.copy()
+        
+        # Validate and sanitize filter inputs
+        try:
+            # Suburb filter
+            if filters.get('suburbs') and len(filters['suburbs']) > 0:
+                # Validate suburbs exist in data
+                valid_suburbs = [s for s in filters['suburbs'] if s in df['Property locality'].values]
+                if valid_suburbs:
+                    filtered_df = filtered_df[filtered_df['Property locality'].isin(valid_suburbs)]
+                
+            # Price range filter
+            if filters.get('priceRange') and len(filters['priceRange']) == 2:
+                min_p, max_p = filters['priceRange']
+                # Validate price range
+                if min_p <= max_p and min_p >= 0:
+                    filtered_df = filtered_df[filtered_df['Purchase price'].between(min_p, max_p)]
+                
+            # Date range filter - Fixed to handle single dates
+            if filters.get('dateRange'):
+                start_d, end_d = filters['dateRange']
+                if start_d:
+                    try:
+                        start_d_dt = pd.to_datetime(start_d)
+                        filtered_df = filtered_df[filtered_df['Contract date'] >= start_d_dt]
+                    except (ValueError, TypeError):
+                        logger.warning(f"Invalid start date: {start_d}")
+                if end_d:
+                    try:
+                        end_d_dt = pd.to_datetime(end_d)
+                        filtered_df = filtered_df[filtered_df['Contract date'] <= end_d_dt]
+                    except (ValueError, TypeError):
+                        logger.warning(f"Invalid end date: {end_d}")
+                
+            # Repeat sales filter
+            if filters.get('repeatSales'):
+                sale_counts = filtered_df['Property ID'].value_counts()
+                repeat_ids = sale_counts[sale_counts > 1].index
+                filtered_df = filtered_df[filtered_df['Property ID'].isin(repeat_ids)]
+                
+        except Exception as e:
+            logger.error(f"Error applying filters: {str(e)}")
+            # Return original data if filtering fails
+            filtered_df = df.copy()
 
-    # --- Prepare data for JSON response ---
-    
-    # Metrics
-    prices = filtered_df['Purchase price']
-    total_properties = len(filtered_df)
-    
-    total_sales = float(prices.sum())
-    avg_price = float(prices.mean()) if total_properties > 0 else 0.0
-    median_price = float(prices.median()) if total_properties > 0 else 0.0
-    
-    # Sales by Suburb Chart
-    sales_by_suburb = filtered_df['Property locality'].value_counts().nlargest(15).sort_values()
-    
-    # Price Trend Chart
-    price_trend = filtered_df.set_index('Contract date').resample('M')['Purchase price'].mean().reset_index()
-    price_trend['Contract date'] = price_trend['Contract date'].dt.strftime('%Y-%m')
+        # --- Prepare data for JSON response ---
+        
+        # Metrics
+        prices = filtered_df['Purchase price']
+        total_properties = len(filtered_df)
+        
+        total_sales = float(prices.sum())
+        avg_price = float(prices.mean()) if total_properties > 0 else 0.0
+        median_price = float(prices.median()) if total_properties > 0 else 0.0
+        
 
-    # Paginated Table Data
-    sort_column = filters.get('sortColumn', 'Contract date')
-    sort_direction = filters.get('sortDirection', 'desc')
-    page = filters.get('page', 1)
-    rows_per_page = 10
-    
-    if sort_column not in filtered_df.columns:
-        sort_column = 'Contract date'
 
-    sorted_df = filtered_df.sort_values(by=sort_column, ascending=(sort_direction == 'asc'))
-    
-    start_index = (page - 1) * rows_per_page
-    end_index = start_index + rows_per_page
-    paginated_data = sorted_df.iloc[start_index:end_index]
-    
-    table_cols = ['Property house number', 'Property street name', 'Property locality', 'Purchase price', 'Contract date', 'Primary purpose']
-    table_data = paginated_data[table_cols].to_dict(orient='records')
+        # Paginated Table Data
+        sort_column = filters.get('sortColumn', 'Contract date')
+        sort_direction = filters.get('sortDirection', 'desc')
+        page = filters.get('page', 1)
+        rows_per_page = 10
+        
+        if sort_column not in filtered_df.columns:
+            sort_column = 'Contract date'
 
-    for row in table_data:
-        if pd.isna(row['Contract date']):
-            row['Contract date'] = None
-        else:
-            row['Contract date'] = row['Contract date'].strftime('%Y-%m-%d')
+        sorted_df = filtered_df.sort_values(by=sort_column, ascending=(sort_direction == 'asc'))
+        
+        start_index = (page - 1) * rows_per_page
+        end_index = start_index + rows_per_page
+        paginated_data = sorted_df.iloc[start_index:end_index]
+        
+        table_cols = ['Property house number', 'Property street name', 'Property locality', 'Purchase price', 'Contract date', 'Primary purpose']
+        table_data = paginated_data[table_cols].to_dict(orient='records')
 
+        for row in table_data:
+            if pd.isna(row['Contract date']):
+                row['Contract date'] = None
+            else:
+                row['Contract date'] = row['Contract date'].strftime('%Y-%m-%d')
 
         return jsonify({
             "metrics": {
@@ -245,16 +267,6 @@ def get_filtered_data():
                 "totalSalesValue": total_sales,
                 "avgPrice": avg_price,
                 "medianPrice": median_price,
-            },
-            "charts": {
-                "salesBySuburb": {
-                    "labels": sales_by_suburb.index.tolist(),
-                    "data": [int(x) for x in sales_by_suburb.values],
-                },
-                "priceTrend": {
-                    "labels": price_trend['Contract date'].tolist(),
-                    "data": price_trend['Purchase price'].tolist(),
-                }
             },
             "table": {
                 "data": table_data,
@@ -266,6 +278,206 @@ def get_filtered_data():
         return error_handler.handle_processing_error(
             e,
             {'endpoint': 'data', 'session_id': filters.get('session_id'), 'ip': request.remote_addr}
+        )
+
+@app.route('/api/export', methods=['POST'])
+def export_data():
+    """Export filtered data as CSV or PDF."""
+    try:
+        filters = request.json or {}
+        export_format = filters.get('export_format', 'csv')
+        
+        # Get session ID from request
+        session_id = filters.get('session_id')
+        if not session_id:
+            return error_handler.handle_validation_error(
+                ValidationError("Session ID is required"),
+                {'endpoint': 'export', 'ip': request.remote_addr}
+            )
+        
+        # Retrieve data from session
+        df = session_manager.get_data(session_id)
+        if df is None:
+            if session_manager.session_exists(session_id):
+                error_msg = "Session data is corrupted. Please upload your file again."
+            else:
+                error_msg = "Session not found or expired. Please upload your file again."
+            
+            return error_handler.handle_validation_error(
+                ValidationError(error_msg),
+                {'endpoint': 'export', 'session_id': session_id}
+            )
+        
+        # Apply the same filters as in get_filtered_data
+        filtered_df = df.copy()
+        
+        try:
+            # Suburb filter
+            if filters.get('suburbs') and len(filters['suburbs']) > 0:
+                valid_suburbs = [s for s in filters['suburbs'] if s in df['Property locality'].values]
+                if valid_suburbs:
+                    filtered_df = filtered_df[filtered_df['Property locality'].isin(valid_suburbs)]
+                
+            # Price range filter
+            if filters.get('priceRange') and len(filters['priceRange']) == 2:
+                min_p, max_p = filters['priceRange']
+                if min_p <= max_p and min_p >= 0:
+                    filtered_df = filtered_df[filtered_df['Purchase price'].between(min_p, max_p)]
+                
+            # Date range filter
+            if filters.get('dateRange'):
+                start_d, end_d = filters['dateRange']
+                if start_d:
+                    try:
+                        start_d_dt = pd.to_datetime(start_d)
+                        filtered_df = filtered_df[filtered_df['Contract date'] >= start_d_dt]
+                    except (ValueError, TypeError):
+                        logger.warning(f"Invalid start date: {start_d}")
+                if end_d:
+                    try:
+                        end_d_dt = pd.to_datetime(end_d)
+                        filtered_df = filtered_df[filtered_df['Contract date'] <= end_d_dt]
+                    except (ValueError, TypeError):
+                        logger.warning(f"Invalid end date: {end_d}")
+                
+            # Repeat sales filter
+            if filters.get('repeatSales'):
+                sale_counts = filtered_df['Property ID'].value_counts()
+                repeat_ids = sale_counts[sale_counts > 1].index
+                filtered_df = filtered_df[filtered_df['Property ID'].isin(repeat_ids)]
+                
+        except Exception as e:
+            logger.error(f"Error applying filters for export: {str(e)}")
+            filtered_df = df.copy()
+
+        # Prepare data for export
+        export_columns = ['Property house number', 'Property street name', 'Property locality', 
+                         'Purchase price', 'Contract date', 'Primary purpose', 'Property ID']
+        
+        # Only include columns that exist in the dataframe
+        available_columns = [col for col in export_columns if col in filtered_df.columns]
+        export_df = filtered_df[available_columns].copy()
+        
+        # Format the data for export
+        if 'Contract date' in export_df.columns:
+            export_df['Contract date'] = export_df['Contract date'].dt.strftime('%Y-%m-%d')
+        
+        if 'Purchase price' in export_df.columns:
+            export_df['Purchase price'] = export_df['Purchase price'].round(2)
+
+        if export_format.lower() == 'csv':
+            # Export as CSV
+            from flask import Response
+            import io
+            
+            output = io.StringIO()
+            export_df.to_csv(output, index=False)
+            output.seek(0)
+            
+            return Response(
+                output.getvalue(),
+                mimetype='text/csv',
+                headers={'Content-Disposition': 'attachment; filename=property_sales_data.csv'}
+            )
+            
+        elif export_format.lower() == 'pdf':
+            # Export as PDF
+            try:
+                from reportlab.lib import colors
+                from reportlab.lib.pagesizes import letter, A4
+                from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+                from reportlab.lib.styles import getSampleStyleSheet
+                from reportlab.lib.units import inch
+                import io
+                
+                buffer = io.BytesIO()
+                doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=72, leftMargin=72, 
+                                      topMargin=72, bottomMargin=18)
+                
+                # Container for the 'Flowable' objects
+                elements = []
+                
+                # Add title
+                styles = getSampleStyleSheet()
+                title = Paragraph("Property Sales Data Export", styles['Title'])
+                elements.append(title)
+                elements.append(Spacer(1, 12))
+                
+                # Add summary info
+                summary_text = f"Total Properties: {len(export_df)}<br/>"
+                if 'Purchase price' in export_df.columns:
+                    total_value = export_df['Purchase price'].sum()
+                    avg_price = export_df['Purchase price'].mean()
+                    summary_text += f"Total Sales Value: ${total_value:,.2f}<br/>"
+                    summary_text += f"Average Price: ${avg_price:,.2f}<br/>"
+                
+                summary = Paragraph(summary_text, styles['Normal'])
+                elements.append(summary)
+                elements.append(Spacer(1, 12))
+                
+                # Prepare table data (limit to first 1000 rows for PDF)
+                table_df = export_df.head(1000)
+                
+                # Create table data
+                data = [table_df.columns.tolist()]
+                for _, row in table_df.iterrows():
+                    row_data = []
+                    for col in table_df.columns:
+                        value = row[col]
+                        if pd.isna(value):
+                            row_data.append('')
+                        elif col == 'Purchase price':
+                            row_data.append(f'${value:,.0f}')
+                        else:
+                            row_data.append(str(value))
+                    data.append(row_data)
+                
+                # Create table
+                table = Table(data)
+                table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 8),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                    ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+                    ('FONTSIZE', (0, 1), (-1, -1), 6),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.black)
+                ]))
+                
+                elements.append(table)
+                
+                if len(export_df) > 1000:
+                    note = Paragraph(f"<br/>Note: Only first 1000 rows shown. Total rows: {len(export_df)}", 
+                                   styles['Normal'])
+                    elements.append(note)
+                
+                # Build PDF
+                doc.build(elements)
+                buffer.seek(0)
+                
+                return Response(
+                    buffer.getvalue(),
+                    mimetype='application/pdf',
+                    headers={'Content-Disposition': 'attachment; filename=property_sales_data.pdf'}
+                )
+                
+            except ImportError:
+                return error_handler.handle_processing_error(
+                    ProcessingError("PDF export not available. Please install reportlab: pip install reportlab"),
+                    {'endpoint': 'export', 'format': 'pdf'}
+                )
+        else:
+            return error_handler.handle_validation_error(
+                ValidationError("Invalid export format. Use 'csv' or 'pdf'"),
+                {'endpoint': 'export', 'format': export_format}
+            )
+            
+    except Exception as e:
+        return error_handler.handle_processing_error(
+            e,
+            {'endpoint': 'export', 'session_id': filters.get('session_id'), 'ip': request.remote_addr}
         )
 
 if __name__ == '__main__':

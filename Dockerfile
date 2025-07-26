@@ -18,4 +18,4 @@ EXPOSE 5000
 
 # Run app.py when the container launches
 # FIX: Increased the timeout to 600 seconds (10 minutes) to allow for large file uploads.
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "--timeout", "600", "app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--timeout", "600", "app:app"]
