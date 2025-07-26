@@ -1,0 +1,9 @@
+version: '3.8'
+services:
+  web:
+    build: .
+    container_name: property_analyzer_web
+    ports:
+      - "8080:5000"
+    volumes:
+      - .:/app

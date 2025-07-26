@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Property Sales Analysis Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .multi-select-container { position: relative; }
+        .multi-select-dropdown { display: none; position: absolute; background-color: white; border: 1px solid #e2e8f0; border-radius: 0.375rem; width: 100%; z-index: 10; max-height: 200px; overflow-y: auto; }
+        .multi-select-dropdown.show { display: block; }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb { background: #888; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
+        .loader { border: 8px solid #f3f3f3; border-radius: 50%; border-top: 8px solid #4f46e5; width: 60px; height: 60px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        th.sortable::after { content: ' \25B2\25BC'; color: #ccc; }
+        th.sorted-asc::after { content: ' \25B2'; color: #333; }
+        th.sorted-desc::after { content: ' \25BC'; color: #333; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+
+    <!-- Main Container -->
+    <div id="app" class="min-h-screen">
+        
+        <!-- Upload View -->
+        <div id="uploadView" class="flex flex-col items-center justify-center min-h-screen p-4">
+            <div class="w-full max-w-lg bg-white p-8 rounded-xl shadow-lg text-center">
+                <h1 class="text-3xl font-bold text-gray-900 mb-2">Property Sales Analysis Dashboard</h1>
+                <p class="text-gray-600 mb-6">Upload a CSV file to begin your analysis.</p>
+                <div class="border-2 border-dashed border-gray-300 rounded-lg p-8 hover:border-indigo-500 transition-colors">
+                    <input type="file" id="csvFile" accept=".csv" class="hidden">
+                    <label for="csvFile" id="fileLabel" class="cursor-pointer">
+                        <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                        <span class="mt-2 block text-sm font-medium text-gray-900">Click to upload a file</span>
+                        <span id="fileName" class="mt-1 block text-xs text-gray-500">CSV files only</span>
+                    </label>
+                </div>
+                <button id="analyzeBtn" class="mt-6 w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-all" disabled>
+                    Analyze Data
+                </button>
+                <!-- NEW: Progress Bar -->
+                <div id="progressContainer" class="w-full mt-4 hidden">
+                    <p id="progressText" class="text-sm text-gray-600 mb-1 text-left"></p>
+                    <div class="w-full bg-gray-200 rounded-full">
+                        <div id="progressBar" class="bg-indigo-600 text-xs font-medium text-indigo-100 text-center p-0.5 leading-none rounded-full transition-all duration-500" style="width: 0%">0%</div>
+                    </div>
+                </div>
+            </div>
+            <div id="errorMessage" class="mt-4 text-red-600 font-medium"></div>
+        </div>
+
+        <!-- Dashboard View -->
+        <div id="dashboardView" class="hidden">
+             <div class="flex flex-col lg:flex-row">
+                <!-- Sidebar -->
+                <aside class="w-full lg:w-80 bg-white p-6 border-r border-gray-200 lg:h-screen lg:sticky top-0 overflow-y-auto">
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-xl font-bold text-gray-900">Filters</h2>
+                        <button id="uploadNewBtn" class="text-sm text-indigo-600 hover:text-indigo-800 font-medium">Upload New</button>
+                    </div>
+                    
+                    <!-- Suburb Filter -->
+                    <div class="mb-6">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Suburb</label>
+                        <div class="multi-select-container">
+                            <button id="suburbSelectBtn" class="w-full bg-white border border-gray-300 rounded-md shadow-sm pl-3 pr-10 py-2 text-left cursor-default focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                                <span id="suburbSelectText" class="block truncate">Select suburbs...</span>
+                            </button>
+                            <div id="suburbDropdown" class="multi-select-dropdown mt-1"></div>
+                        </div>
+                    </div>
+
+                    <!-- Price Range Filter -->
+                    <div class="mb-6">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Price Range</label>
+                        <input type="range" id="minPrice" class="w-full mb-2">
+                        <input type="range" id="maxPrice" class="w-full">
+                        <div class="flex justify-between text-sm text-gray-600 mt-2">
+                            <span id="minPriceLabel">$0</span>
+                            <span id="maxPriceLabel">$5,000,000+</span>
+                        </div>
+                    </div>
+
+                    <!-- Contract Date Filter -->
+                    <div class="mb-6">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Contract Date</label>
+                        <div class="space-y-2">
+                            <input type="date" id="startDate" class="w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                            <input type="date" id="endDate" class="w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                        </div>
+                    </div>
+
+                    <!-- Repeat Sales Filter -->
+                    <div class="mb-6">
+                        <div class="relative flex items-start">
+                            <div class="flex items-center h-5"><input id="repeatSales" name="repeatSales" type="checkbox" class="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300 rounded"></div>
+                            <div class="ml-3 text-sm"><label for="repeatSales" class="font-medium text-gray-700">Show properties sold > once</label></div>
+                        </div>
+                    </div>
+
+                    <button id="resetFiltersBtn" class="w-full bg-gray-200 text-gray-700 font-bold py-2 px-4 rounded-lg hover:bg-gray-300 transition-all">Reset Filters</button>
+                </aside>
+
+                <!-- Main Content -->
+                <main class="flex-1 p-6 lg:p-8 bg-gray-50">
+                    <div id="loadingOverlay" class="fixed inset-0 bg-white bg-opacity-75 flex items-center justify-center z-50 hidden"><div class="loader"></div></div>
+                    <!-- Key Metrics -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                        <div class="bg-white p-5 rounded-xl shadow"><h3 class="text-sm font-medium text-gray-500">Total Properties</h3><p id="totalProperties" class="mt-1 text-3xl font-semibold text-gray-900">0</p></div>
+                        <div class="bg-white p-5 rounded-xl shadow"><h3 class="text-sm font-medium text-gray-500">Total Sales Value</h3><p id="totalSalesValue" class="mt-1 text-3xl font-semibold text-gray-900">$0</p></div>
+                        <div class="bg-white p-5 rounded-xl shadow"><h3 class="text-sm font-medium text-gray-500">Average Price</h3><p id="avgPrice" class="mt-1 text-3xl font-semibold text-gray-900">$0</p></div>
+                        <div class="bg-white p-5 rounded-xl shadow"><h3 class="text-sm font-medium text-gray-500">Median Price</h3><p id="medianPrice" class="mt-1 text-3xl font-semibold text-gray-900">$0</p></div>
+                    </div>
+                    <!-- Charts -->
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                        <div class="bg-white p-5 rounded-xl shadow"><h3 class="text-lg font-semibold text-gray-900 mb-4">Sales by Suburb</h3><canvas id="salesBySuburbChart"></canvas></div>
+                        <div class="bg-white p-5 rounded-xl shadow"><h3 class="text-lg font-semibold text-gray-900 mb-4">Price Trend (Monthly Avg)</h3><canvas id="priceTrendChart"></canvas></div>
+                    </div>
+                    <!-- Data Table -->
+                    <div class="bg-white rounded-xl shadow overflow-hidden">
+                        <div class="p-5"><h3 class="text-lg font-semibold text-gray-900">Property Sales Data</h3></div>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50"><tr id="tableHeaderRow"></tr></thead>
+                                <tbody id="dataTableBody" class="bg-white divide-y divide-gray-200"></tbody>
+                            </table>
+                        </div>
+                        <div id="paginationControls" class="p-4 flex items-center justify-between border-t border-gray-200"></div>
+                    </div>
+                </main>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    // --- STATE MANAGEMENT ---
+    let appState = {
+        filters: {
+            suburbs: [],
+            priceRange: [0, 0],
+            dateRange: [null, null],
+            repeatSales: false,
+            sortColumn: 'Contract date',
+            sortDirection: 'desc',
+            page: 1,
+        },
+        initialFilterValues: {},
+        charts: {
+            salesBySuburb: null,
+            priceTrend: null,
+        },
+        totalRows: 0,
+    };
+
+    // --- DOM ELEMENTS ---
+    const uploadView = document.getElementById('uploadView');
+    const dashboardView = document.getElementById('dashboardView');
+    const csvFileInput = document.getElementById('csvFile');
+    const fileNameSpan = document.getElementById('fileName');
+    const analyzeBtn = document.getElementById('analyzeBtn');
+    const errorMessage = document.getElementById('errorMessage');
+    const loadingOverlay = document.getElementById('loadingOverlay');
+    const suburbSelectBtn = document.getElementById('suburbSelectBtn');
+    const suburbSelectText = document.getElementById('suburbSelectText');
+    const suburbDropdown = document.getElementById('suburbDropdown');
+    const minPriceSlider = document.getElementById('minPrice');
+    const maxPriceSlider = document.getElementById('maxPrice');
+    const minPriceLabel = document.getElementById('minPriceLabel');
+    const maxPriceLabel = document.getElementById('maxPriceLabel');
+    const startDateInput = document.getElementById('startDate');
+    const endDateInput = document.getElementById('endDate');
+    const repeatSalesCheckbox = document.getElementById('repeatSales');
+    const resetFiltersBtn = document.getElementById('resetFiltersBtn');
+    const uploadNewBtn = document.getElementById('uploadNewBtn');
+    const totalPropertiesEl = document.getElementById('totalProperties');
+    const totalSalesValueEl = document.getElementById('totalSalesValue');
+    const avgPriceEl = document.getElementById('avgPrice');
+    const medianPriceEl = document.getElementById('medianPrice');
+    const dataTableBody = document.getElementById('dataTableBody');
+    const tableHeaderRow = document.getElementById('tableHeaderRow');
+    const paginationControls = document.getElementById('paginationControls');
+    const progressContainer = document.getElementById('progressContainer');
+    const progressBar = document.getElementById('progressBar');
+    const progressText = document.getElementById('progressText');
+
+    // --- DEBOUNCE FUNCTION ---
+    function debounce(func, delay) {
+        let timeout;
+        return function(...args) {
+            const context = this;
+            clearTimeout(timeout);
+            timeout = setTimeout(() => func.apply(context, args), delay);
+        };
+    }
+
+    // --- EVENT LISTENERS ---
+    csvFileInput.addEventListener('change', () => {
+        if (csvFileInput.files.length > 0) {
+            fileNameSpan.textContent = csvFileInput.files[0].name;
+            analyzeBtn.disabled = false;
+            errorMessage.textContent = '';
+        }
+    });
+
+    analyzeBtn.addEventListener('click', handleDataUpload);
+    uploadNewBtn.addEventListener('click', () => {
+        location.reload(); // Simple way to reset the app
+    });
+
+    suburbSelectBtn.addEventListener('click', () => suburbDropdown.classList.toggle('show'));
+    document.addEventListener('click', (e) => {
+        if (!suburbSelectBtn.contains(e.target) && !suburbDropdown.contains(e.target)) {
+            suburbDropdown.classList.remove('show');
+        }
+    });
+
+    const debouncedFetch = debounce(() => fetchFilteredData(), 500);
+    minPriceSlider.addEventListener('input', () => {
+        appState.filters.priceRange = [parseFloat(minPriceSlider.value), parseFloat(maxPriceSlider.value)];
+        updatePriceSliderUI();
+        debouncedFetch();
+    });
+    maxPriceSlider.addEventListener('input', () => {
+        appState.filters.priceRange = [parseFloat(minPriceSlider.value), parseFloat(maxPriceSlider.value)];
+        updatePriceSliderUI();
+        debouncedFetch();
+    });
+    startDateInput.addEventListener('change', () => {
+        appState.filters.dateRange[0] = startDateInput.value;
+        fetchFilteredData();
+    });
+    endDateInput.addEventListener('change', () => {
+        appState.filters.dateRange[1] = endDateInput.value;
+        fetchFilteredData();
+    });
+    repeatSalesCheckbox.addEventListener('change', () => {
+        appState.filters.repeatSales = repeatSalesCheckbox.checked;
+        fetchFilteredData();
+    });
+    resetFiltersBtn.addEventListener('click', resetAllFilters);
+
+    // --- FUNCTIONS ---
+    function handleDataUpload() {
+        const file = csvFileInput.files[0];
+        if (!file) return;
+
+        // Reset UI
+        errorMessage.textContent = '';
+        analyzeBtn.disabled = true;
+        progressContainer.classList.remove('hidden');
+        progressBar.style.width = '0%';
+        progressBar.textContent = '0%';
+        progressText.textContent = 'Uploading...';
+        progressBar.classList.remove('bg-yellow-500');
+        progressBar.classList.add('bg-indigo-600');
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/upload', true);
+
+        // Track upload progress
+        xhr.upload.onprogress = function(event) {
+            if (event.lengthComputable) {
+                const percentComplete = Math.round((event.loaded / event.total) * 100);
+                progressBar.style.width = percentComplete + '%';
+                progressBar.textContent = percentComplete + '%';
+                if (percentComplete === 100) {
+                    progressText.textContent = 'Upload complete. Analyzing data on server...';
+                    progressBar.classList.remove('bg-indigo-600');
+                    progressBar.classList.add('bg-yellow-500'); // Change color to indicate processing
+                }
+            }
+        };
+
+        // Handle completion
+        xhr.onload = function() {
+            analyzeBtn.disabled = false;
+            progressContainer.classList.add('hidden');
+
+            if (xhr.status >= 200 && xhr.status < 300) {
+                const result = JSON.parse(xhr.responseText);
+                uploadView.classList.add('hidden');
+                dashboardView.classList.remove('hidden');
+                setupDashboard(result.filters);
+                fetchFilteredData();
+            } else {
+                try {
+                    const result = JSON.parse(xhr.responseText);
+                    errorMessage.textContent = `Error: ${result.error || 'Failed to process file.'}`;
+                } catch (e) {
+                    errorMessage.textContent = `Error: Server returned status ${xhr.status}.`;
+                }
+            }
+        };
+
+        // Handle errors
+        xhr.onerror = function() {
+            analyzeBtn.disabled = false;
+            progressContainer.classList.add('hidden');
+            errorMessage.textContent = 'An error occurred during the upload. Please check your network connection.';
+        };
+
+        xhr.send(formData);
+    }
+
+    function setupDashboard(initialFilters) {
+        appState.initialFilterValues = JSON.parse(JSON.stringify(initialFilters)); // Deep copy
+        setupSuburbFilter(initialFilters.suburbs);
+        setupPriceFilter(initialFilters.priceRange);
+        setupDateFilter(initialFilters.dateRange);
+        setupCharts();
+        setupDataTableHeaders();
+        resetAllFilters(false); // Set filters to initial state without fetching data
+    }
+
+    function setupSuburbFilter(suburbs) {
+        suburbDropdown.innerHTML = '';
+        suburbs.forEach(suburb => {
+            const optionDiv = document.createElement('div');
+            optionDiv.className = 'flex items-center p-2 hover:bg-gray-100 cursor-pointer';
+            optionDiv.innerHTML = `<input type="checkbox" class="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500" data-suburb="${suburb}"><span class="ml-2 text-sm text-gray-800">${suburb}</span>`;
+            optionDiv.querySelector('input').addEventListener('change', (e) => {
+                const s = e.target.dataset.suburb;
+                if (e.target.checked) {
+                    appState.filters.suburbs.push(s);
+                } else {
+                    appState.filters.suburbs = appState.filters.suburbs.filter(sub => sub !== s);
+                }
+                updateSuburbButtonText();
+                fetchFilteredData();
+            });
+            suburbDropdown.appendChild(optionDiv);
+        });
+    }
+
+    function setupPriceFilter(range) {
+        const [min, max] = range;
+        minPriceSlider.min = maxPriceSlider.min = min;
+        minPriceSlider.max = maxPriceSlider.max = max;
+    }
+
+    function setupDateFilter(range) {
+        const [min, max] = range;
+        startDateInput.min = endDateInput.min = min;
+        startDateInput.max = endDateInput.max = max;
+    }
+
+    function setupCharts() {
+        if (appState.charts.salesBySuburb) appState.charts.salesBySuburb.destroy();
+        if (appState.charts.priceTrend) appState.charts.priceTrend.destroy();
+
+        appState.charts.salesBySuburb = new Chart(document.getElementById('salesBySuburbChart').getContext('2d'), {
+            type: 'bar',
+            data: { labels: [], datasets: [{ label: '# of Sales', data: [], backgroundColor: 'rgba(79, 70, 229, 0.8)' }] },
+            options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, scales: { x: { beginAtZero: true } } }
+        });
+
+        appState.charts.priceTrend = new Chart(document.getElementById('priceTrendChart').getContext('2d'), {
+            type: 'line',
+            data: { labels: [], datasets: [{ label: 'Average Price', data: [], borderColor: 'rgba(79, 70, 229, 1)', tension: 0.1, fill: false }] },
+            options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: false } } }
+        });
+    }
+    
+    function setupDataTableHeaders() {
+        tableHeaderRow.innerHTML = '';
+        const headers = {'Property': 'Property house number', 'Suburb': 'Property locality', 'Price': 'Purchase price', 'Contract Date': 'Contract date', 'Purpose': 'Primary purpose'};
+        Object.entries(headers).forEach(([displayName, internalName]) => {
+            const th = document.createElement('th');
+            th.scope = 'col';
+            th.className = 'px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer sortable';
+            th.textContent = displayName;
+            th.dataset.sort = internalName;
+            th.addEventListener('click', () => handleSort(internalName));
+            tableHeaderRow.appendChild(th);
+        });
+    }
+
+    function handleSort(column) {
+        if (appState.filters.sortColumn === column) {
+            appState.filters.sortDirection = appState.filters.sortDirection === 'asc' ? 'desc' : 'asc';
+        } else {
+            appState.filters.sortColumn = column;
+            appState.filters.sortDirection = 'asc';
+        }
+        fetchFilteredData();
+    }
+
+    async function fetchFilteredData() {
+        loadingOverlay.classList.remove('hidden');
+        appState.filters.page = 1; // Reset to page 1 on any filter change
+        try {
+            const response = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(appState.filters)
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error);
+            updateDashboard(result);
+        } catch (error) {
+            console.error("Filter error:", error);
+            errorMessage.textContent = `Error: ${error.message}`;
+        } finally {
+            loadingOverlay.classList.add('hidden');
+        }
+    }
+    
+    async function fetchPaginatedData(page) {
+        loadingOverlay.classList.remove('hidden');
+        appState.filters.page = page;
+        try {
+            const response = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(appState.filters)
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error);
+            updateDataTable(result.table);
+            renderPaginationControls();
+        } catch (error) {
+            console.error("Pagination error:", error);
+        } finally {
+            loadingOverlay.classList.add('hidden');
+        }
+    }
+
+    function updateDashboard(data) {
+        updateMetrics(data.metrics);
+        updateCharts(data.charts);
+        updateDataTable(data.table);
+        updateHeaderSortIndicators();
+        renderPaginationControls();
+    }
+
+    function updateMetrics(metrics) {
+        totalPropertiesEl.textContent = metrics.totalProperties.toLocaleString();
+        totalSalesValueEl.textContent = formatCurrency(metrics.totalSalesValue);
+        avgPriceEl.textContent = formatCurrency(metrics.avgPrice);
+        medianPriceEl.textContent = formatCurrency(metrics.medianPrice);
+    }
+
+    function updateCharts(charts) {
+        appState.charts.salesBySuburb.data.labels = charts.salesBySuburb.labels;
+        appState.charts.salesBySuburb.data.datasets[0].data = charts.salesBySuburb.data;
+        appState.charts.salesBySuburb.update();
+
+        appState.charts.priceTrend.data.labels = charts.priceTrend.labels;
+        appState.charts.priceTrend.data.datasets[0].data = charts.priceTrend.data;
+        appState.charts.priceTrend.update();
+    }
+
+    function updateDataTable(tableData) {
+        appState.totalRows = tableData.totalRows;
+        dataTableBody.innerHTML = '';
+        if (tableData.data.length === 0) {
+            dataTableBody.innerHTML = `<tr><td colspan="5" class="text-center py-8 text-gray-500">No data matches filters.</td></tr>`;
+            return;
+        }
+        tableData.data.forEach(row => {
+            const tr = document.createElement('tr');
+            tr.className = 'hover:bg-gray-50';
+            tr.innerHTML = `
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-800">${row['Property house number'] || ''} ${row['Property street name'] || ''}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${row['Property locality']}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-800 font-medium">${formatCurrency(row['Purchase price'])}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${row['Contract date']}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${row['Primary purpose']}</td>
+            `;
+            dataTableBody.appendChild(tr);
+        });
+    }
+
+    function resetAllFilters(fetch = true) {
+        const initial = appState.initialFilterValues;
+        appState.filters.suburbs = [];
+        appState.filters.priceRange = initial.priceRange;
+        appState.filters.dateRange = initial.dateRange;
+        appState.filters.repeatSales = false;
+
+        // Reset UI elements
+        suburbDropdown.querySelectorAll('input').forEach(i => i.checked = false);
+        updateSuburbButtonText();
+        
+        // FIX: Explicitly assign values to prevent potential errors
+        minPriceSlider.value = initial.priceRange[0];
+        maxPriceSlider.value = initial.priceRange[1];
+        updatePriceSliderUI();
+
+        startDateInput.value = initial.dateRange[0];
+        endDateInput.value = initial.dateRange[1];
+        repeatSalesCheckbox.checked = false;
+
+        if (fetch) fetchFilteredData();
+    }
+
+    function updatePriceSliderUI() {
+        let minVal = parseFloat(minPriceSlider.value);
+        let maxVal = parseFloat(maxPriceSlider.value);
+
+        if (minVal > maxVal) {
+            // This can happen if the user drags the min slider past the max.
+            // A swap isn't needed here, just make sure the state is correct.
+        }
+        minPriceLabel.textContent = formatCurrency(minVal);
+        maxPriceLabel.textContent = formatCurrency(maxVal);
+    }
+    
+    function updateSuburbButtonText() {
+        const count = appState.filters.suburbs.length;
+        if (count === 0) suburbSelectText.textContent = 'Select suburbs...';
+        else if (count === 1) suburbSelectText.textContent = appState.filters.suburbs[0];
+        else suburbSelectText.textContent = `${count} suburbs selected`;
+    }
+    
+    function updateHeaderSortIndicators() {
+        document.querySelectorAll('#tableHeaderRow th').forEach(th => {
+            th.classList.remove('sorted-asc', 'sorted-desc');
+            if (th.dataset.sort === appState.filters.sortColumn) {
+                th.classList.add(appState.filters.sortDirection === 'asc' ? 'sorted-asc' : 'sorted-desc');
+            }
+        });
+    }
+
+    function renderPaginationControls() {
+        const totalPages = Math.ceil(appState.totalRows / 10);
+        const currentPage = appState.filters.page;
+        paginationControls.innerHTML = '';
+        if (totalPages <= 1) return;
+
+        let html = `<p class="text-sm text-gray-700">Showing <span class="font-medium">${(currentPage - 1) * 10 + 1}</span> to <span class="font-medium">${Math.min(currentPage * 10, appState.totalRows)}</span> of <span class="font-medium">${appState.totalRows}</span> results</p>
+                    <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px">`;
+        html += `<button class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50" ${currentPage === 1 ? 'disabled' : ''} onclick="fetchPaginatedData(${currentPage - 1})">&laquo;</button>`;
+        // Simple pagination: show first, current-1, current, current+1, last
+        let pagesToShow = [1, totalPages, currentPage, currentPage - 1, currentPage + 1];
+        pagesToShow = [...new Set(pagesToShow)].filter(p => p > 0 && p <= totalPages).sort((a,b) => a-b);
+        
+        let lastPage = 0;
+        for (const i of pagesToShow) {
+            if (lastPage > 0 && i > lastPage + 1) {
+                 html += `<span class="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">...</span>`;
+            }
+            if (i === currentPage) {
+                html += `<button aria-current="page" class="z-10 bg-indigo-50 border-indigo-500 text-indigo-600 relative inline-flex items-center px-4 py-2 border text-sm font-medium">${i}</button>`;
+            } else {
+                html += `<button class="bg-white border-gray-300 text-gray-500 hover:bg-gray-50 relative inline-flex items-center px-4 py-2 border text-sm font-medium" onclick="fetchPaginatedData(${i})">${i}</button>`;
+            }
+            lastPage = i;
+        }
+
+        html += `<button class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50" ${currentPage === totalPages ? 'disabled' : ''} onclick="fetchPaginatedData(${currentPage + 1})">&raquo;</button></nav>`;
+        paginationControls.innerHTML = html;
+    }
+
+    function formatCurrency(value) {
+        return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
+    }
+    </script>
+</body>
+</html>
