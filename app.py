@@ -185,11 +185,18 @@ def get_filtered_data():
         # Validate and sanitize filter inputs
         try:
             # Suburb filter
-            if filters.get('suburbs') and len(filters['suburbs']) > 0:
-                # Validate suburbs exist in data
-                valid_suburbs = [s for s in filters['suburbs'] if s in df['Property locality'].values]
-                if valid_suburbs:
-                    filtered_df = filtered_df[filtered_df['Property locality'].isin(valid_suburbs)]
+            if filters.get('suburbs') is not None:
+                if len(filters['suburbs']) > 0:
+                    # Validate suburbs exist in data
+                    valid_suburbs = [s for s in filters['suburbs'] if s in df['Property locality'].values]
+                    if valid_suburbs:
+                        filtered_df = filtered_df[filtered_df['Property locality'].isin(valid_suburbs)]
+                    else:
+                        # No valid suburbs selected, return empty result
+                        filtered_df = filtered_df.iloc[0:0]  # Empty dataframe with same structure
+                else:
+                    # Empty suburbs array means no suburbs selected, return empty result
+                    filtered_df = filtered_df.iloc[0:0]  # Empty dataframe with same structure
                 
             # Price range filter
             if filters.get('priceRange') and len(filters['priceRange']) == 2:
@@ -313,10 +320,17 @@ def export_data():
         
         try:
             # Suburb filter
-            if filters.get('suburbs') and len(filters['suburbs']) > 0:
-                valid_suburbs = [s for s in filters['suburbs'] if s in df['Property locality'].values]
-                if valid_suburbs:
-                    filtered_df = filtered_df[filtered_df['Property locality'].isin(valid_suburbs)]
+            if filters.get('suburbs') is not None:
+                if len(filters['suburbs']) > 0:
+                    valid_suburbs = [s for s in filters['suburbs'] if s in df['Property locality'].values]
+                    if valid_suburbs:
+                        filtered_df = filtered_df[filtered_df['Property locality'].isin(valid_suburbs)]
+                    else:
+                        # No valid suburbs selected, return empty result
+                        filtered_df = filtered_df.iloc[0:0]  # Empty dataframe with same structure
+                else:
+                    # Empty suburbs array means no suburbs selected, return empty result
+                    filtered_df = filtered_df.iloc[0:0]  # Empty dataframe with same structure
                 
             # Price range filter
             if filters.get('priceRange') and len(filters['priceRange']) == 2:
