@@ -253,7 +253,25 @@ def get_filtered_data():
         if sort_column not in filtered_df.columns:
             sort_column = 'Contract date'
 
-        sorted_df = filtered_df.sort_values(by=sort_column, ascending=(sort_direction == 'asc'))
+        # Special sorting for repeat sales to cluster properties together
+        if filters.get('repeatSales') and len(filtered_df) > 0:
+            # Create a composite address for grouping
+            filtered_df['_composite_address'] = (
+                filtered_df['Property house number'].astype(str) + ' ' + 
+                filtered_df['Property street name'].astype(str) + ', ' + 
+                filtered_df['Property locality'].astype(str)
+            ).str.replace('nan ', '').str.replace(' nan', '').str.replace('nan', '')
+            
+            # Sort by composite address first, then by contract date within each property
+            sorted_df = filtered_df.sort_values(
+                by=['_composite_address', 'Contract date'], 
+                ascending=[True, (sort_direction == 'asc')]
+            )
+            
+            # Remove the temporary column before returning data
+            sorted_df = sorted_df.drop('_composite_address', axis=1)
+        else:
+            sorted_df = filtered_df.sort_values(by=sort_column, ascending=(sort_direction == 'asc'))
         
         start_index = (page - 1) * rows_per_page
         end_index = start_index + rows_per_page
@@ -363,6 +381,24 @@ def export_data():
         except Exception as e:
             logger.error(f"Error applying filters for export: {str(e)}")
             filtered_df = df.copy()
+
+        # Apply clustering for repeat sales in export as well
+        if filters.get('repeatSales') and len(filtered_df) > 0:
+            # Create a composite address for grouping
+            filtered_df['_composite_address'] = (
+                filtered_df['Property house number'].astype(str) + ' ' + 
+                filtered_df['Property street name'].astype(str) + ', ' + 
+                filtered_df['Property locality'].astype(str)
+            ).str.replace('nan ', '').str.replace(' nan', '').str.replace('nan', '')
+            
+            # Sort by composite address first, then by contract date
+            filtered_df = filtered_df.sort_values(
+                by=['_composite_address', 'Contract date'], 
+                ascending=[True, True]
+            )
+            
+            # Remove the temporary column
+            filtered_df = filtered_df.drop('_composite_address', axis=1)
 
         # Prepare data for export
         export_columns = ['Property house number', 'Property street name', 'Property locality', 
