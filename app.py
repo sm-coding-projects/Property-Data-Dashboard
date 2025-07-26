@@ -121,6 +121,7 @@ def upload_file():
         
         # Prepare initial data for the dashboard filters
         suburbs = df['Property locality'].unique().tolist()
+        purposes = df['Primary purpose'].unique().tolist()
         min_price = float(df['Purchase price'].min())
         max_price = float(df['Purchase price'].max())
         min_date = df['Contract date'].min().strftime('%Y-%m-%d')
@@ -133,6 +134,7 @@ def upload_file():
             "session_id": session_id,
             "filters": {
                 "suburbs": sorted(suburbs),
+                "purposes": sorted([p for p in purposes if pd.notna(p)]),  # Filter out NaN values
                 "priceRange": [min_price, max_price],
                 "dateRange": [min_date, max_date]
             }
@@ -196,6 +198,22 @@ def get_filtered_data():
                         filtered_df = filtered_df.iloc[0:0]  # Empty dataframe with same structure
                 else:
                     # Empty suburbs array means no suburbs selected, return empty result
+                    filtered_df = filtered_df.iloc[0:0]  # Empty dataframe with same structure
+            
+            # Purpose filter - only apply if purposes are actively selected
+            if filters.get('purposes') and len(filters['purposes']) > 0:
+                # Get available purposes, excluding NaN values
+                available_purposes = df['Primary purpose'].dropna().unique().tolist()
+                
+                # Validate purposes exist in data - use set intersection for better performance and reliability
+                requested_purposes_set = set(filters['purposes'])
+                available_purposes_set = set(available_purposes)
+                valid_purposes = list(requested_purposes_set.intersection(available_purposes_set))
+                
+                if valid_purposes:
+                    filtered_df = filtered_df[filtered_df['Primary purpose'].isin(valid_purposes)]
+                else:
+                    # No valid purposes selected, return empty result
                     filtered_df = filtered_df.iloc[0:0]  # Empty dataframe with same structure
                 
             # Price range filter
@@ -353,6 +371,22 @@ def export_data():
                         filtered_df = filtered_df.iloc[0:0]  # Empty dataframe with same structure
                 else:
                     # Empty suburbs array means no suburbs selected, return empty result
+                    filtered_df = filtered_df.iloc[0:0]  # Empty dataframe with same structure
+            
+            # Purpose filter - only apply if purposes are actively selected
+            if filters.get('purposes') and len(filters['purposes']) > 0:
+                # Get available purposes, excluding NaN values
+                available_purposes = df['Primary purpose'].dropna().unique().tolist()
+                
+                # Validate purposes exist in data - use set intersection for better performance and reliability
+                requested_purposes_set = set(filters['purposes'])
+                available_purposes_set = set(available_purposes)
+                valid_purposes = list(requested_purposes_set.intersection(available_purposes_set))
+                
+                if valid_purposes:
+                    filtered_df = filtered_df[filtered_df['Primary purpose'].isin(valid_purposes)]
+                else:
+                    # No valid purposes selected, return empty result
                     filtered_df = filtered_df.iloc[0:0]  # Empty dataframe with same structure
                 
             # Price range filter

@@ -109,6 +109,26 @@
                         </div>
                     </div>
 
+                    <!-- Purpose Filter -->
+                    <div class="mb-6">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Purpose</label>
+                        <div class="multi-select-container">
+                            <button id="purposeSelectBtn" class="w-full bg-white border border-gray-300 rounded-md shadow-sm pl-3 pr-10 py-2 text-left cursor-default focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                                <span id="purposeSelectText" class="block truncate">Select purposes...</span>
+                            </button>
+                            <div id="purposeDropdown" class="multi-select-dropdown mt-1">
+                                <div class="p-2 border-b border-gray-200">
+                                    <input type="text" id="purposeSearch" placeholder="Search purposes..." class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 mb-2">
+                                    <div class="flex gap-2">
+                                        <button id="selectAllPurposes" class="flex-1 px-2 py-1 text-xs bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 transition-colors">Select All</button>
+                                        <button id="clearAllPurposes" class="flex-1 px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors">Clear All</button>
+                                    </div>
+                                </div>
+                                <div id="purposeOptions" class="max-h-48 overflow-y-auto"></div>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Repeat Sales Filter -->
                     <div class="mb-6">
                         <div class="relative flex items-start">
@@ -174,6 +194,7 @@
         sessionId: null,
         filters: {
             suburbs: [],
+            purposes: [],
             priceRange: [0, 0],
             dateRange: [null, null],
             repeatSales: false,
@@ -184,6 +205,7 @@
         },
         initialFilterValues: {},
         allSuburbs: [],
+        allPurposes: [],
         totalRows: 0,
     };
 
@@ -198,6 +220,9 @@
     const suburbSelectBtn = document.getElementById('suburbSelectBtn');
     const suburbSelectText = document.getElementById('suburbSelectText');
     const suburbDropdown = document.getElementById('suburbDropdown');
+    const purposeSelectBtn = document.getElementById('purposeSelectBtn');
+    const purposeSelectText = document.getElementById('purposeSelectText');
+    const purposeDropdown = document.getElementById('purposeDropdown');
     const minPriceSlider = document.getElementById('minPrice');
     const maxPriceSlider = document.getElementById('maxPrice');
     const minPriceLabel = document.getElementById('minPriceLabel');
@@ -255,10 +280,26 @@
             setTimeout(() => suburbSearch.focus(), 100);
         }
     });
+
+    purposeSelectBtn.addEventListener('click', () => {
+        purposeDropdown.classList.toggle('show');
+        // Clear search and show all options when opening
+        const purposeSearch = document.getElementById('purposeSearch');
+        const purposeOptions = document.getElementById('purposeOptions');
+        if (purposeSearch && purposeOptions) {
+            purposeSearch.value = '';
+            purposeOptions.querySelectorAll('.purpose-option').forEach(option => option.classList.remove('hidden'));
+            // Focus on search input when dropdown opens
+            setTimeout(() => purposeSearch.focus(), 100);
+        }
+    });
     
     document.addEventListener('click', (e) => {
         if (!suburbSelectBtn.contains(e.target) && !suburbDropdown.contains(e.target)) {
             suburbDropdown.classList.remove('show');
+        }
+        if (!purposeSelectBtn.contains(e.target) && !purposeDropdown.contains(e.target)) {
+            purposeDropdown.classList.remove('show');
         }
     });
 
@@ -385,6 +426,7 @@
     function setupDashboard(initialFilters) {
         appState.initialFilterValues = JSON.parse(JSON.stringify(initialFilters)); // Deep copy
         setupSuburbFilter(initialFilters.suburbs);
+        setupPurposeFilter(initialFilters.purposes);
         setupPriceFilter(initialFilters.priceRange);
         setupDateFilter(initialFilters.dateRange);
         setupDataTableHeaders();
@@ -492,6 +534,107 @@
         clearAllBtn.addEventListener('click', (e) => e.stopPropagation());
         
 
+    }
+
+    function setupPurposeFilter(purposes) {
+        // Store all purposes for filtering
+        appState.allPurposes = purposes;
+        
+        // Set up the dropdown structure
+        const purposeOptions = document.getElementById('purposeOptions');
+        const purposeSearch = document.getElementById('purposeSearch');
+        
+        // Clear existing options
+        purposeOptions.innerHTML = '';
+        
+        // Create purpose options
+        purposes.forEach(purpose => {
+            const optionDiv = document.createElement('div');
+            optionDiv.className = 'purpose-option flex items-center';
+            optionDiv.innerHTML = `<input type="checkbox" class="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 mr-2" data-purpose="${purpose}"><span class="text-sm text-gray-800">${purpose}</span>`;
+            optionDiv.dataset.purpose = purpose.toLowerCase(); // Store lowercase for searching
+            
+            optionDiv.querySelector('input').addEventListener('change', (e) => {
+                const p = e.target.dataset.purpose;
+                if (e.target.checked) {
+                    appState.filters.purposes.push(p);
+                } else {
+                    appState.filters.purposes = appState.filters.purposes.filter(purpose => purpose !== p);
+                }
+                updatePurposeButtonText();
+                fetchFilteredData();
+            });
+            
+            purposeOptions.appendChild(optionDiv);
+        });
+        
+        // Add search functionality
+        purposeSearch.addEventListener('input', (e) => {
+            const searchTerm = e.target.value.toLowerCase();
+            const options = purposeOptions.querySelectorAll('.purpose-option');
+            
+            options.forEach(option => {
+                const purposeName = option.dataset.purpose;
+                if (purposeName.includes(searchTerm)) {
+                    option.classList.remove('hidden');
+                } else {
+                    option.classList.add('hidden');
+                }
+            });
+        });
+        
+        // Add keyboard support for search
+        purposeSearch.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                purposeDropdown.classList.remove('show');
+                purposeSelectBtn.focus();
+            }
+        });
+        
+        // Prevent dropdown from closing when clicking inside search input
+        purposeSearch.addEventListener('click', (e) => {
+            e.stopPropagation();
+        });
+        
+        // Add Select All functionality
+        const selectAllBtn = document.getElementById('selectAllPurposes');
+        const clearAllBtn = document.getElementById('clearAllPurposes');
+        
+        selectAllBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const visibleOptions = purposeOptions.querySelectorAll('.purpose-option:not(.hidden)');
+            visibleOptions.forEach(option => {
+                const checkbox = option.querySelector('input[type="checkbox"]');
+                if (!checkbox.checked) {
+                    checkbox.checked = true;
+                    const purpose = checkbox.dataset.purpose;
+                    if (!appState.filters.purposes.includes(purpose)) {
+                        appState.filters.purposes.push(purpose);
+                    }
+                }
+            });
+            updatePurposeButtonText();
+            fetchFilteredData();
+        });
+        
+        clearAllBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const visibleOptions = purposeOptions.querySelectorAll('.purpose-option:not(.hidden)');
+            visibleOptions.forEach(option => {
+                const checkbox = option.querySelector('input[type="checkbox"]');
+                if (checkbox.checked) {
+                    checkbox.checked = false;
+                    const purpose = checkbox.dataset.purpose;
+                    appState.filters.purposes = appState.filters.purposes.filter(p => p !== purpose);
+                }
+            });
+            updatePurposeButtonText();
+            fetchFilteredData();
+        });
+        
+        // Prevent buttons from closing dropdown
+        selectAllBtn.addEventListener('click', (e) => e.stopPropagation());
+        clearAllBtn.addEventListener('click', (e) => e.stopPropagation());
     }
 
     function setupPriceFilter(range) {
@@ -653,6 +796,7 @@
     function resetAllFilters(fetch = true) {
         const initial = appState.initialFilterValues;
         appState.filters.suburbs = [];
+        appState.filters.purposes = [];
         appState.filters.priceRange = initial.priceRange;
         appState.filters.dateRange = initial.dateRange;
         appState.filters.repeatSales = false;
@@ -662,6 +806,8 @@
         // Reset UI elements
         const suburbOptions = document.getElementById('suburbOptions');
         const suburbSearch = document.getElementById('suburbSearch');
+        const purposeOptions = document.getElementById('purposeOptions');
+        const purposeSearch = document.getElementById('purposeSearch');
         
         if (suburbOptions) {
             suburbOptions.querySelectorAll('input').forEach(i => i.checked = false);
@@ -671,6 +817,15 @@
             suburbSearch.value = '';
         }
         updateSuburbButtonText();
+        
+        if (purposeOptions) {
+            purposeOptions.querySelectorAll('input').forEach(i => i.checked = false);
+            purposeOptions.querySelectorAll('.purpose-option').forEach(option => option.classList.remove('hidden'));
+        }
+        if (purposeSearch) {
+            purposeSearch.value = '';
+        }
+        updatePurposeButtonText();
         
         // FIX: Explicitly assign values to prevent potential errors
         minPriceSlider.value = initial.priceRange[0];
@@ -712,6 +867,13 @@
         if (count === 0) suburbSelectText.textContent = 'Select suburbs...';
         else if (count === 1) suburbSelectText.textContent = appState.filters.suburbs[0];
         else suburbSelectText.textContent = `${count} suburbs selected`;
+    }
+    
+    function updatePurposeButtonText() {
+        const count = appState.filters.purposes.length;
+        if (count === 0) purposeSelectText.textContent = 'Select purposes...';
+        else if (count === 1) purposeSelectText.textContent = appState.filters.purposes[0];
+        else purposeSelectText.textContent = `${count} purposes selected`;
     }
     
     function updateHeaderSortIndicators() {
