@@ -248,7 +248,12 @@ def get_filtered_data():
         sort_column = filters.get('sortColumn', 'Contract date')
         sort_direction = filters.get('sortDirection', 'desc')
         page = filters.get('page', 1)
-        rows_per_page = 10
+        rows_per_page = filters.get('rowsPerPage', 10)
+        
+        # Validate rows_per_page to prevent abuse
+        valid_page_sizes = [10, 50, 100, 200]
+        if rows_per_page not in valid_page_sizes:
+            rows_per_page = 10
         
         if sort_column not in filtered_df.columns:
             sort_column = 'Contract date'

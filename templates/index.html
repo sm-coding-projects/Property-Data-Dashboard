@@ -133,7 +133,19 @@
                     <!-- Data Table -->
                     <div class="bg-white rounded-xl shadow overflow-hidden">
                         <div class="p-5 flex justify-between items-center">
-                            <h3 class="text-lg font-semibold text-gray-900">Property Sales Data</h3>
+                            <div class="flex items-center gap-4">
+                                <h3 class="text-lg font-semibold text-gray-900">Property Sales Data</h3>
+                                <div class="flex items-center gap-2">
+                                    <label for="rowsPerPageSelect" class="text-sm text-gray-600">Show:</label>
+                                    <select id="rowsPerPageSelect" class="border border-gray-300 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500">
+                                        <option value="10">10</option>
+                                        <option value="50">50</option>
+                                        <option value="100">100</option>
+                                        <option value="200">200</option>
+                                    </select>
+                                    <span class="text-sm text-gray-600">per page</span>
+                                </div>
+                            </div>
                             <div class="flex gap-2">
                                 <button id="exportCsvBtn" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors text-sm font-medium">
                                     Export CSV
@@ -168,6 +180,7 @@
             sortColumn: 'Contract date',
             sortDirection: 'desc',
             page: 1,
+            rowsPerPage: 10,
         },
         initialFilterValues: {},
         allSuburbs: [],
@@ -201,6 +214,7 @@
     const dataTableBody = document.getElementById('dataTableBody');
     const tableHeaderRow = document.getElementById('tableHeaderRow');
     const paginationControls = document.getElementById('paginationControls');
+    const rowsPerPageSelect = document.getElementById('rowsPerPageSelect');
     const progressContainer = document.getElementById('progressContainer');
     const progressBar = document.getElementById('progressBar');
     const progressText = document.getElementById('progressText');
@@ -272,6 +286,11 @@
         fetchFilteredData();
     });
     resetFiltersBtn.addEventListener('click', resetAllFilters);
+    rowsPerPageSelect.addEventListener('change', () => {
+        appState.filters.rowsPerPage = parseInt(rowsPerPageSelect.value);
+        appState.filters.page = 1; // Reset to first page when changing page size
+        fetchFilteredData();
+    });
 
     // Export button event listeners
     document.getElementById('exportCsvBtn').addEventListener('click', exportToCsv);
@@ -637,6 +656,8 @@
         appState.filters.priceRange = initial.priceRange;
         appState.filters.dateRange = initial.dateRange;
         appState.filters.repeatSales = false;
+        appState.filters.page = 1;
+        appState.filters.rowsPerPage = 10;
 
         // Reset UI elements
         const suburbOptions = document.getElementById('suburbOptions');
@@ -659,6 +680,7 @@
         startDateInput.value = initial.dateRange[0];
         endDateInput.value = initial.dateRange[1];
         repeatSalesCheckbox.checked = false;
+        rowsPerPageSelect.value = '10';
 
         if (fetch) fetchFilteredData();
     }
@@ -702,12 +724,16 @@
     }
 
     function renderPaginationControls() {
-        const totalPages = Math.ceil(appState.totalRows / 10);
+        const rowsPerPage = appState.filters.rowsPerPage;
+        const totalPages = Math.ceil(appState.totalRows / rowsPerPage);
         const currentPage = appState.filters.page;
         paginationControls.innerHTML = '';
         if (totalPages <= 1) return;
 
-        let html = `<p class="text-sm text-gray-700">Showing <span class="font-medium">${(currentPage - 1) * 10 + 1}</span> to <span class="font-medium">${Math.min(currentPage * 10, appState.totalRows)}</span> of <span class="font-medium">${appState.totalRows}</span> results</p>
+        const startItem = (currentPage - 1) * rowsPerPage + 1;
+        const endItem = Math.min(currentPage * rowsPerPage, appState.totalRows);
+        
+        let html = `<p class="text-sm text-gray-700">Showing <span class="font-medium">${startItem}</span> to <span class="font-medium">${endItem}</span> of <span class="font-medium">${appState.totalRows}</span> results</p>
                     <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px">`;
         html += `<button class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50" ${currentPage === 1 ? 'disabled' : ''} onclick="fetchPaginatedData(${currentPage - 1})">&laquo;</button>`;
         // Simple pagination: show first, current-1, current, current+1, last
