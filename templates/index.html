@@ -141,6 +141,7 @@
     <script>
     // --- STATE MANAGEMENT ---
     let appState = {
+        sessionId: null,
         filters: {
             suburbs: [],
             priceRange: [0, 0],
@@ -287,6 +288,7 @@
 
             if (xhr.status >= 200 && xhr.status < 300) {
                 const result = JSON.parse(xhr.responseText);
+                appState.sessionId = result.session_id;
                 uploadView.classList.add('hidden');
                 dashboardView.classList.remove('hidden');
                 setupDashboard(result.filters);
@@ -398,13 +400,17 @@
         loadingOverlay.classList.remove('hidden');
         appState.filters.page = 1; // Reset to page 1 on any filter change
         try {
+            const requestData = {
+                ...appState.filters,
+                session_id: appState.sessionId
+            };
             const response = await fetch('/api/data', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(appState.filters)
+                body: JSON.stringify(requestData)
             });
             const result = await response.json();
-            if (!response.ok) throw new Error(result.error);
+            if (!response.ok) throw new Error(result.error?.message || result.error);
             updateDashboard(result);
         } catch (error) {
             console.error("Filter error:", error);
@@ -507,10 +513,20 @@
         let minVal = parseFloat(minPriceSlider.value);
         let maxVal = parseFloat(maxPriceSlider.value);
 
+        // Fix: Prevent min from being greater than max
         if (minVal > maxVal) {
-            // This can happen if the user drags the min slider past the max.
-            // A swap isn't needed here, just make sure the state is correct.
+            if (minPriceSlider === document.activeElement) {
+                // User is dragging min slider, adjust max
+                maxPriceSlider.value = minVal;
+                maxVal = minVal;
+            } else {
+                // User is dragging max slider, adjust min
+                minPriceSlider.value = maxVal;
+                minVal = maxVal;
+            }
+            appState.filters.priceRange = [minVal, maxVal];
         }
+        
         minPriceLabel.textContent = formatCurrency(minVal);
         maxPriceLabel.textContent = formatCurrency(maxVal);
     }
@@ -558,7 +574,7 @@
         }
 
         html += `<button class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50" ${currentPage === totalPages ? 'disabled' : ''} onclick="fetchPaginatedData(${currentPage + 1})">&raquo;</button></nav>`;
-        paginationControls.innerHTML = html;
+        paginationControls.innerHTML = html;nerHTML = html;
     }
 
     function formatCurrency(value) {
