@@ -209,7 +209,8 @@
         },
         initialFilterValues: {},
         allSuburbs: [],
-        allPurposes: [],
+        allPurposes: [],           // All purposes in dataset
+        availablePurposes: [],     // Purposes available for current suburbs
         totalRows: 0,
     };
 
@@ -440,6 +441,10 @@
         appState.initialFilterValues = JSON.parse(JSON.stringify(initialFilters)); // Deep copy
         setupSuburbFilter(initialFilters.suburbs);
         setupPurposeFilter(initialFilters.purposes);
+        
+        // Initialize available purposes to all purposes (no suburb filtering initially)
+        appState.availablePurposes = initialFilters.purposes;
+        
         setupPriceFilter(initialFilters.priceRange);
         setupDateFilter(initialFilters.dateRange);
         setupDataTableHeaders();
@@ -472,6 +477,8 @@
                     appState.filters.suburbs = appState.filters.suburbs.filter(sub => sub !== s);
                 }
                 updateSuburbButtonText();
+                // Update available purposes based on new suburb selection
+                debouncedPurposeUpdate();
                 fetchFilteredData();
             });
             
@@ -524,6 +531,8 @@
                 }
             });
             updateSuburbButtonText();
+            // Update available purposes for Select All
+            debouncedPurposeUpdate();
             fetchFilteredData();
         });
         
@@ -539,6 +548,8 @@
                 }
             });
             updateSuburbButtonText();
+            // Update available purposes for Clear All
+            debouncedPurposeUpdate();
             fetchFilteredData();
         });
         
@@ -649,6 +660,142 @@
         selectAllBtn.addEventListener('click', (e) => e.stopPropagation());
         clearAllBtn.addEventListener('click', (e) => e.stopPropagation());
     }
+
+    // Update available purposes based on current suburb selection (legacy function)
+    async function updateAvailablePurposes() {
+        return updateAvailablePurposesWithCache();
+    }
+
+    // Show loading state in purpose filter
+    function showPurposeLoading() {
+        const purposeOptions = document.getElementById('purposeOptions');
+        purposeOptions.innerHTML = '<div class="p-4 text-sm text-gray-500 text-center">Loading purposes...</div>';
+    }
+    
+    // Update the purpose filter UI with available options
+    function updatePurposeFilterUI() {
+        const purposeOptions = document.getElementById('purposeOptions');
+        purposeOptions.innerHTML = '';
+        
+        if (appState.availablePurposes.length === 0) {
+            purposeOptions.innerHTML = '<div class="p-4 text-sm text-gray-500 text-center">No purposes available for selected suburbs</div>';
+            return;
+        }
+        
+        appState.availablePurposes.forEach(purpose => {
+            const optionDiv = document.createElement('div');
+            optionDiv.className = 'purpose-option flex items-center';
+            optionDiv.dataset.purpose = purpose.toLowerCase(); // Store lowercase for searching
+            
+            const isSelected = appState.filters.purposes.includes(purpose);
+            optionDiv.innerHTML = `
+                <input type="checkbox" ${isSelected ? 'checked' : ''} 
+                       class="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 mr-2" 
+                       data-purpose="${purpose}">
+                <span class="text-sm text-gray-800">${purpose}</span>
+            `;
+            
+            // Add event listener for selection changes
+            const checkbox = optionDiv.querySelector('input');
+            checkbox.addEventListener('change', (e) => {
+                const p = e.target.dataset.purpose;
+                if (e.target.checked) {
+                    if (!appState.filters.purposes.includes(p)) {
+                        appState.filters.purposes.push(p);
+                    }
+                } else {
+                    appState.filters.purposes = appState.filters.purposes.filter(purpose => purpose !== p);
+                }
+                updatePurposeButtonText();
+                fetchFilteredData();
+            });
+            
+            purposeOptions.appendChild(optionDiv);
+        });
+        
+        // Re-add search functionality to new options
+        const purposeSearch = document.getElementById('purposeSearch');
+        if (purposeSearch) {
+            // Clear existing search
+            purposeSearch.value = '';
+        }
+    }
+
+    // Remove selected purposes that are no longer available
+    function cleanupInvalidPurposeSelections() {
+        const availableSet = new Set(appState.availablePurposes);
+        const originalLength = appState.filters.purposes.length;
+        
+        appState.filters.purposes = appState.filters.purposes.filter(purpose => 
+            availableSet.has(purpose)
+        );
+        
+        // If selections were removed, update UI and fetch new data
+        if (appState.filters.purposes.length !== originalLength) {
+            updatePurposeButtonText();
+            fetchFilteredData();
+        }
+    }
+
+    // Cache for purpose results by suburb combination
+    const purposeCache = new Map();
+    
+    // Generate cache key from suburb array
+    function getPurposeCacheKey(suburbs) {
+        return suburbs.sort().join('|');
+    }
+    
+    // Enhanced updateAvailablePurposes with caching
+    async function updateAvailablePurposesWithCache() {
+        if (!appState.sessionId) return;
+        
+        const cacheKey = getPurposeCacheKey(appState.filters.suburbs);
+        
+        // Check cache first
+        if (purposeCache.has(cacheKey)) {
+            appState.availablePurposes = purposeCache.get(cacheKey);
+            updatePurposeFilterUI();
+            cleanupInvalidPurposeSelections();
+            return;
+        }
+        
+        // Show loading state while fetching
+        showPurposeLoading();
+        
+        // If not in cache, fetch from API
+        try {
+            const response = await fetch('/api/available-purposes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    session_id: appState.sessionId,
+                    suburbs: appState.filters.suburbs
+                })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            
+            // Cache the result
+            purposeCache.set(cacheKey, result.purposes);
+            
+            appState.availablePurposes = result.purposes;
+            updatePurposeFilterUI();
+            cleanupInvalidPurposeSelections();
+            
+        } catch (error) {
+            console.error('Failed to update available purposes:', error);
+            // Fallback to showing all purposes
+            appState.availablePurposes = appState.allPurposes;
+            updatePurposeFilterUI();
+        }
+    }
+
+    // Debounced version for performance
+    const debouncedPurposeUpdate = debounce(updateAvailablePurposesWithCache, 300);
 
     function setupPriceFilter(range) {
         const [min, max] = range;
@@ -845,6 +992,10 @@
             purposeSearch.value = '';
         }
         updatePurposeButtonText();
+        
+        // Reset available purposes to show all purposes (no suburb filtering)
+        appState.availablePurposes = appState.allPurposes;
+        updatePurposeFilterUI();
         
         // Reset price inputs to default values (0 to max)
         minPriceInput.value = '';  // Empty means 0 (default)
