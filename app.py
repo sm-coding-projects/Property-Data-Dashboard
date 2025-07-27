@@ -569,5 +569,58 @@ def export_data():
             {'endpoint': 'export', 'session_id': filters.get('session_id'), 'ip': request.remote_addr}
         )
 
+@app.route('/api/available-purposes', methods=['POST'])
+def get_available_purposes():
+    """Returns purposes available for selected suburbs."""
+    try:
+        filters = request.json or {}
+        
+        # Get session ID from request
+        session_id = filters.get('session_id')
+        if not session_id:
+            return error_handler.handle_validation_error(
+                ValidationError("Session ID is required"),
+                {'endpoint': 'available-purposes', 'ip': request.remote_addr}
+            )
+        
+        # Retrieve data from session
+        df = session_manager.get_data(session_id)
+        if df is None:
+            if session_manager.session_exists(session_id):
+                error_msg = "Session data is corrupted. Please upload your file again."
+            else:
+                error_msg = "Session not found or expired. Please upload your file again."
+            
+            return error_handler.handle_validation_error(
+                ValidationError(error_msg),
+                {'endpoint': 'available-purposes', 'session_id': session_id}
+            )
+        
+        selected_suburbs = filters.get('suburbs', [])
+        
+        if not selected_suburbs:
+            # No suburbs selected, return all purposes
+            purposes = df['Primary purpose'].dropna().unique().tolist()
+        else:
+            # Filter by selected suburbs first, then get available purposes
+            valid_suburbs = [s for s in selected_suburbs if s in df['Property locality'].values]
+            if valid_suburbs:
+                suburb_filtered_df = df[df['Property locality'].isin(valid_suburbs)]
+                purposes = suburb_filtered_df['Primary purpose'].dropna().unique().tolist()
+            else:
+                # No valid suburbs, return empty purposes list
+                purposes = []
+        
+        return jsonify({
+            "purposes": sorted(purposes),
+            "count": len(purposes)
+        })
+        
+    except Exception as e:
+        return error_handler.handle_processing_error(
+            e,
+            {'endpoint': 'available-purposes', 'session_id': filters.get('session_id'), 'ip': request.remote_addr}
+        )
+
 if __name__ == '__main__':
     app.run(debug=config.DEBUG, host='0.0.0.0')
