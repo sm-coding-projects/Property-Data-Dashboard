@@ -52,33 +52,398 @@ Property-Data-Dashboard/
     └── index.html       # Single-page application frontend
 ```
 
-## 🚀 Quick Start
+## 🐳 Docker Deployment
 
-### Prerequisites
-- Docker and Docker Compose installed
-- At least 4GB RAM allocated to Docker (recommended: 8GB)
+This section provides comprehensive Docker deployment instructions for the Property Data Dashboard, from quick setup to production deployment.
 
-### Installation & Setup
+### Prerequisites and System Requirements
 
-1. **Clone or download the project files**
-   ```bash
-   git clone <repository-url>
-   cd Property-Data-Dashboard
-   ```
+Before deploying the Property Data Dashboard with Docker, ensure your system meets the following requirements:
 
-2. **Configure Docker memory** (Important for large files)
-   - Open Docker Desktop
-   - Go to Settings > Resources > Advanced
-   - Set Memory to at least 4GB (8GB recommended)
-   - Apply & Restart
+#### Required Software
+- **Docker Engine**: Version 20.10.0 or later ([Installation Guide](https://docs.docker.com/get-docker/))
+- **Docker Compose**: Version 2.0.0 or later (included with Docker Desktop)
 
-3. **Start the application**
-   ```bash
-   docker-compose up --build
-   ```
+#### System Requirements
+**Minimum Requirements:**
+- **RAM**: 4GB allocated to Docker
+- **CPU**: 2 cores
+- **Disk Space**: 2GB free space
 
-4. **Access the dashboard**
-   Open your browser and navigate to: http://localhost:8080
+**Recommended for Large Files:**
+- **RAM**: 8GB allocated to Docker
+- **CPU**: 4 cores
+- **Disk Space**: 5GB free space
+
+#### Docker Resource Configuration
+For Docker Desktop (Windows/macOS):
+1. Open Docker Desktop → Settings → Resources → Advanced
+2. Set Memory to at least 4GB (8GB recommended)
+3. Allocate at least 2 CPU cores
+4. Apply & Restart
+
+### 🚀 Quick Start Guide
+
+Get the Property Data Dashboard running in under 5 minutes:
+
+#### 1. Get the Application
+```bash
+git clone <repository-url>
+cd Property-Data-Dashboard
+```
+
+#### 2. Start the Services
+```bash
+docker-compose up --build
+```
+**Expected output:**
+```
+✓ Container property_analyzer_redis  Created
+✓ Container property_analyzer_web    Created
+✓ Container property_analyzer_web    Started
+✓ Container property_analyzer_redis  Started
+```
+
+#### 3. Verify Deployment
+```bash
+curl http://localhost:8080/health
+```
+**Expected output:**
+```json
+{"status": "healthy", "timestamp": "2025-01-25T10:30:00Z"}
+```
+
+#### 4. Access the Dashboard
+Open your browser and navigate to: **http://localhost:8080**
+
+**Success indicators:**
+- ✅ Page loads without errors
+- ✅ File upload area is displayed
+- ✅ No error messages in browser console
+
+### Development Deployment
+
+For development with hot reload and debugging capabilities:
+
+#### Create Development Override
+```bash
+cat > docker-compose.override.yml << 'EOF'
+version: '3.8'
+services:
+  web:
+    environment:
+      - DEBUG=true
+      - LOG_LEVEL=DEBUG
+      - SESSION_TIMEOUT=7200
+      - RATE_LIMIT_ENABLED=false
+    volumes:
+      - .:/app:rw  # Enable hot reload
+    ports:
+      - "8080:5000"
+      - "5678:5678"  # Debug port
+EOF
+```
+
+#### Start Development Environment
+```bash
+docker-compose up --build
+```
+
+**Development features:**
+- Hot reload on code changes
+- Extended session timeout (2 hours)
+- Debug logging enabled
+- Rate limiting disabled for testing
+
+### Production Deployment
+
+For production environments with security and performance optimizations:
+
+#### Create Production Environment
+```bash
+cat > .env.prod << 'EOF'
+DEBUG=false
+SECRET_KEY=your-64-character-secure-secret-key-here
+LOG_LEVEL=INFO
+MAX_FILE_SIZE=500
+SESSION_TIMEOUT=3600
+REDIS_URL=redis://redis:6379/0
+RATE_LIMIT_ENABLED=true
+SECURE_COOKIES=true
+FORCE_HTTPS=true
+EOF
+```
+
+#### Production Docker Compose
+```bash
+cat > docker-compose.prod.yml << 'EOF'
+version: '3.8'
+services:
+  web:
+    build: .
+    environment:
+      - DEBUG=false
+      - LOG_LEVEL=INFO
+      - SECRET_KEY=${SECRET_KEY}
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --maxmemory 1gb
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+    restart: unless-stopped
+EOF
+```
+
+#### Start Production Environment
+```bash
+docker-compose -f docker-compose.prod.yml --env-file .env.prod up -d
+```
+
+### Environment Configuration
+
+#### Complete Environment Variable Reference
+
+| Variable | Type | Default | Development | Production | Docker Context | Description |
+|----------|------|---------|-------------|------------|----------------|-------------|
+| `DEBUG` | Boolean | `false` | `true` | `false` | Container env | Enable Flask debug mode with detailed error pages |
+| `SECRET_KEY` | String | Auto-generated | `dev-key` | **Required** | Container env | Flask secret key for session security and CSRF protection |
+| `LOG_LEVEL` | String | `INFO` | `DEBUG` | `INFO` | Container env | Logging verbosity (DEBUG, INFO, WARNING, ERROR) |
+| `MAX_FILE_SIZE` | Integer | `500` | `1000` | `500` | Container env | Maximum file upload size in MB |
+| `SESSION_TIMEOUT` | Integer | `3600` | `7200` | `3600` | Container env | Session timeout in seconds |
+| `REDIS_URL` | String | `None` | `redis://redis:6379/0` | `redis://redis:6379/0` | Service link | Redis connection URL for session storage |
+| `RATE_LIMIT_ENABLED` | Boolean | `true` | `false` | `true` | Container env | Enable API rate limiting |
+| `UPLOAD_TIMEOUT` | Integer | `300` | `600` | `300` | Container env | File upload timeout in seconds |
+| `MAX_WORKERS` | Integer | `4` | `2` | `4` | Container config | Number of Gunicorn worker processes |
+| `WORKER_TIMEOUT` | Integer | `120` | `300` | `120` | Container config | Worker timeout in seconds |
+| `SECURE_COOKIES` | Boolean | `false` | `false` | `true` | Container env | Force secure cookies (HTTPS only) |
+| `FORCE_HTTPS` | Boolean | `false` | `false` | `true` | Container env | Redirect HTTP to HTTPS |
+
+#### Docker-Specific Configuration Examples
+
+**Development with Docker Override:**
+```yaml
+# docker-compose.override.yml
+version: '3.8'
+services:
+  web:
+    environment:
+      - DEBUG=true
+      - LOG_LEVEL=DEBUG
+      - SESSION_TIMEOUT=7200
+      - RATE_LIMIT_ENABLED=false
+      - MAX_FILE_SIZE=1000
+    volumes:
+      - .:/app:rw  # Enable hot reload
+    ports:
+      - "8080:5000"
+      - "5678:5678"  # Debug port
+```
+
+**Production with Resource Limits:**
+```yaml
+# docker-compose.prod.yml
+version: '3.8'
+services:
+  web:
+    environment:
+      - DEBUG=false
+      - LOG_LEVEL=INFO
+      - SECRET_KEY=${SECRET_KEY}
+      - SECURE_COOKIES=true
+      - FORCE_HTTPS=true
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 2G
+          cpus: '1.0'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+```
+
+**Environment File for Docker:**
+```bash
+# .env.docker
+# Docker-specific environment configuration
+
+# Core application settings
+DEBUG=false
+SECRET_KEY=your-64-character-secure-secret-key
+LOG_LEVEL=INFO
+
+# File processing optimized for containers
+MAX_FILE_SIZE=500
+UPLOAD_TIMEOUT=300
+CHUNK_SIZE=10000
+
+# Container networking
+REDIS_URL=redis://redis:6379/0
+BIND_HOST=0.0.0.0
+BIND_PORT=5000
+
+# Container resource management
+MAX_WORKERS=4
+WORKER_TIMEOUT=120
+WORKER_CLASS=sync
+
+# Security for containerized deployment
+RATE_LIMIT_ENABLED=true
+SECURE_COOKIES=true
+FORCE_HTTPS=false  # Set to true behind reverse proxy
+```
+
+#### Security Best Practices
+```bash
+# Generate secure secret key
+python3 -c "import secrets; print(secrets.token_hex(32))"
+
+# Set secure file permissions
+chmod 600 .env.prod
+
+# Use strong Redis authentication (production)
+REDIS_URL=redis://username:strong-password@redis:6379/0
+
+# Docker secrets management
+echo "your-secret-key" | docker secret create property_dashboard_secret -
+
+# Kubernetes secrets
+kubectl create secret generic property-dashboard-secret \
+  --from-literal=SECRET_KEY=$(openssl rand -hex 32)
+```
+
+### Verification and Testing
+
+#### Health Check Verification
+```bash
+# Test application health
+curl http://localhost:8080/health
+
+# Check service status
+docker-compose ps
+
+# Monitor logs
+docker-compose logs -f web
+```
+
+#### Basic Functionality Test
+```bash
+# Create test CSV file
+cat > test-data.csv << 'EOF'
+Property locality,Purchase price,Contract date,Primary purpose
+Sydney,500000,2024-01-15,Residential
+Melbourne,450000,2024-01-20,Residential
+EOF
+
+# Test file upload
+curl -X POST http://localhost:8080/api/upload -F "file=@test-data.csv"
+```
+
+#### Performance Verification
+```bash
+# Monitor resource usage
+docker stats
+
+# Test response times
+curl -w "Time: %{time_total}s\n" http://localhost:8080/health
+```
+
+### Docker Troubleshooting
+
+#### Common Issues and Solutions
+
+**Port Already in Use:**
+```bash
+# Find process using port 8080
+lsof -i :8080
+
+# Kill conflicting process
+sudo kill -9 <PID>
+
+# Or use different port
+docker-compose up -p 8081:5000
+```
+
+**Out of Memory:**
+```bash
+# Increase Docker memory allocation
+# Docker Desktop → Settings → Resources → Memory: 8GB+
+
+# Check container memory usage
+docker stats
+```
+
+**Container Won't Start:**
+```bash
+# Check logs for errors
+docker-compose logs web
+
+# Rebuild without cache
+docker-compose build --no-cache
+
+# Reset everything
+docker-compose down -v
+docker-compose up --build
+```
+
+**Redis Connection Issues:**
+```bash
+# Test Redis connectivity
+docker-compose exec redis redis-cli ping
+
+# Restart Redis service
+docker-compose restart redis
+
+# Check Redis logs
+docker-compose logs redis
+```
+
+#### Diagnostic Commands
+```bash
+# View container status
+docker-compose ps
+
+# Check container health
+docker inspect property_analyzer_web --format='{{.State.Health.Status}}'
+
+# Monitor resource usage
+docker stats --no-stream
+
+# Export logs for analysis
+docker-compose logs web > application.log
+```
+
+### Advanced Configuration
+
+For advanced deployment scenarios including SSL/TLS, load balancing, and cloud deployment, see [DEPLOYMENT.md](DEPLOYMENT.md).
+
+#### Stop the Application
+```bash
+# Stop services
+docker-compose down
+
+# Stop and remove volumes
+docker-compose down -v
+```
 
 ## 📊 Usage Guide
 
@@ -128,7 +493,14 @@ Property-Data-Dashboard/
 
 ## ⚙️ Configuration
 
-### Environment Variables
+### Docker Deployment Configuration
+
+For comprehensive Docker deployment instructions including environment variables, development setup, and production deployment, see the [Docker Deployment](#-docker-deployment) section above.
+
+### Key Environment Variables
+
+For complete environment variable reference with deployment contexts, see the [Environment Configuration](#environment-configuration) section above.
+
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DEBUG` | `false` | Enable debug mode (development only) |
@@ -138,8 +510,31 @@ Property-Data-Dashboard/
 | `REDIS_URL` | `None` | Redis connection URL for session storage |
 | `RATE_LIMIT_ENABLED` | `true` | Enable rate limiting |
 | `SECRET_KEY` | `auto-generated` | Flask secret key |
+| `MAX_WORKERS` | `4` | Number of Gunicorn worker processes |
+| `SECURE_COOKIES` | `false` | Force secure cookies (HTTPS only) |
+| `FORCE_HTTPS` | `false` | Redirect HTTP to HTTPS |
 
-### Development Setup
+### Docker Configuration Validation
+
+Validate your Docker configuration before deployment:
+
+```bash
+# Validate docker-compose.yml syntax
+docker-compose config
+
+# Check environment variables
+docker-compose config --services
+
+# Test configuration
+docker-compose up --dry-run
+
+# Validate environment file
+./validate-environment.sh  # See Environment Configuration section
+```
+
+### Non-Docker Development Setup
+For development without Docker:
+
 ```bash
 # Set environment variables
 export DEBUG=true
@@ -152,18 +547,7 @@ pip install -r requirements.txt
 python app.py
 ```
 
-### Production Deployment
-```bash
-# Set production environment variables
-export DEBUG=false
-export LOG_LEVEL=INFO
-export REDIS_URL=redis://localhost:6379/0
-export MAX_FILE_SIZE=500
-export SESSION_TIMEOUT=3600
-
-# Use Docker Compose
-docker-compose up --build -d
-```
+**Note**: Docker deployment is recommended for both development and production. See [Docker Deployment](#-docker-deployment) for complete instructions.
 
 ## 🔒 Security Features
 
@@ -239,32 +623,109 @@ All API endpoints are protected by rate limiting:
 
 ## 🐛 Troubleshooting
 
-### Common Issues
+### Docker-Specific Issues
+
+For comprehensive Docker troubleshooting including container startup issues, port conflicts, memory problems, and service connectivity, see the [Docker Troubleshooting](#docker-troubleshooting) section above.
+
+#### Container and Service Issues
+
+**Container Won't Start:**
+```bash
+# Check container status and logs
+docker-compose ps
+docker-compose logs web
+
+# Rebuild without cache
+docker-compose build --no-cache web
+
+# Reset everything
+docker-compose down -v
+docker-compose up --build
+```
+
+**Port Conflicts:**
+```bash
+# Find process using port 8080
+lsof -i :8080
+
+# Use different port
+docker-compose up -p 8081:5000
+
+# Kill conflicting process
+sudo kill -9 <PID>
+```
+
+**Redis Connection Issues:**
+```bash
+# Test Redis connectivity
+docker-compose exec redis redis-cli ping
+
+# Check Redis logs
+docker-compose logs redis
+
+# Restart Redis service
+docker-compose restart redis
+```
+
+**Memory and Performance Issues:**
+```bash
+# Monitor container resource usage
+docker stats
+
+# Check Docker memory allocation
+docker system info | grep Memory
+
+# Increase memory limits in docker-compose.yml
+deploy:
+  resources:
+    limits:
+      memory: 4G
+```
+
+### Common Application Issues
 
 **File Upload Fails**
 - Check file size (max 500MB by default)
 - Ensure file is in CSV format
 - Verify CSV has required columns (Property locality, Purchase price, etc.)
+- Check container logs: `docker-compose logs web`
+- Verify disk space: `docker system df`
+- See [Docker Troubleshooting](#docker-troubleshooting) for container-related upload issues
 
 **Out of Memory Errors**
-- Increase Docker memory allocation to 8GB
+- Increase Docker memory allocation to 8GB (see [Prerequisites](#prerequisites-and-system-requirements))
 - Use smaller CSV files for testing
-- Check available system memory
+- Check available system memory with `docker stats`
+- Monitor container memory: `docker stats property_analyzer_web`
+- Reduce `MAX_FILE_SIZE` environment variable
 
 **Session Expired**
 - Sessions expire after 1 hour by default
 - Upload a new file to create a new session
-- Configure longer session timeout if needed
+- Configure longer session timeout in environment variables
+- Check Redis connectivity if using Redis sessions
+- Verify session storage: `docker-compose logs redis`
 
 **Slow Performance**
 - Use pagination with smaller page sizes
 - Enable Redis for session storage
 - Optimize CSV file structure
+- Monitor resource usage with `docker stats`
+- Check container CPU limits and increase if needed
+- Verify network connectivity between services
 
 ### Logs and Monitoring
-- Application logs are available via `docker-compose logs web`
+- Application logs: `docker-compose logs web`
+- Redis logs: `docker-compose logs redis`
 - Health check endpoint: `http://localhost:8080/health`
-- Error details are logged with context for debugging
+- Real-time monitoring: `docker-compose logs -f`
+- Resource monitoring: `docker stats`
+
+### Advanced Troubleshooting
+
+For detailed troubleshooting procedures including diagnostic commands, log analysis, and performance monitoring, see:
+- [Docker Troubleshooting](#docker-troubleshooting) section above
+- [DEPLOYMENT.md](DEPLOYMENT.md) for production deployment issues
 
 ## 🤝 Contributing
 

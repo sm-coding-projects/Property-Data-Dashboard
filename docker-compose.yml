@@ -1,4 +1,3 @@
-version: '3.8'
 services:
   web:
     build: .
@@ -13,6 +12,7 @@ services:
       - MAX_FILE_SIZE=500
       - SESSION_TIMEOUT=3600
       - RATE_LIMIT_ENABLED=true
+      - REDIS_URL=redis://redis:6379/0
     deploy:
       resources:
         limits:
